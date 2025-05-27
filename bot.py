@@ -198,7 +198,7 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.TEXT, handle_all_text))
 
     scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
-    scheduler.add_job(send_daily_reminder, "cron", hour=20, minute=0, args=[app])
+    scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=15, args=[app])
     scheduler.start()
 
     print("Bot is running with Supabase backend...")
