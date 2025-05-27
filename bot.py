@@ -3,6 +3,7 @@ import logging
 import sqlite3
 import datetime
 import httpx
+from random import choice
 
 from telegram import Update
 from telegram.ext import (
@@ -11,6 +12,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Enable logging
 logging.basicConfig(
@@ -95,7 +97,20 @@ def get_streaks(chat_id):
     conn.close()
     return results
 
-# --- Helper: Send emoji reaction via Telegram HTTP API ---
+# --- Motivational Quotes ---
+motivational_quotes = [
+    "🏋️‍♂️ Don’t wish for it. Work for it.",
+    "🔥 Sweat now, shine later.",
+    "💪 The only bad workout is the one you didn’t do.",
+    "🚀 One more rep. One more step. Let’s go!",
+    "📈 Progress starts with showing up!",
+    "⚡ Discipline = freedom. Hit your streak!"
+]
+
+def get_random_quote():
+    return choice(motivational_quotes)
+
+# --- Send 🔥 reaction using Telegram API ---
 async def send_fire_reaction(bot_token: str, chat_id: str, message_id: int):
     url = f"https://api.telegram.org/bot{bot_token}/setMessageReaction"
     payload = {
@@ -126,8 +141,9 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_id = update.message.message_id
 
     logging.info(f"Received message: {text} from {user_name}")
+    logging.info(f"Chat ID: {chat_id}")
 
-    # Match + or ++ anywhere in the message as a separate word
+    # Handle streak update
     if any(token in ['+', '++'] for token in text.split()):
         streak_incremented = update_streak(chat_id, user_id, user_name)
         if streak_incremented:
@@ -135,7 +151,7 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await send_fire_reaction(bot_token, chat_id, message_id)
         return
 
-    # Manually check for /streaks
+    # Handle /streaks command
     if text.startswith("/streaks"):
         logging.info("Manual /streaks handler triggered")
         results = get_streaks(chat_id)
@@ -156,16 +172,62 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logging.error("Failed to send streaks message", exc_info=True)
 
-# --- Main Bot Setup ---
+# --- Daily Reminder ---
+async def send_daily_reminder(app):
+    logging.info("Running daily reminder job...")
+
+    group_chat_id = os.getenv("GROUP_CHAT_ID")
+    if not group_chat_id:
+        logging.warning("GROUP_CHAT_ID not set. Skipping reminder.")
+        return
+
+    today = str(datetime.date.today())
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT user_id, user_name, last_date FROM streaks WHERE chat_id=?", (group_chat_id,))
+    users = c.fetchall()
+    conn.close()
+
+    # Tag users who haven't done at least 1 streak today
+    inactive_users = [
+        (uid, name) for uid, name, last_date in users
+        if last_date != today
+    ]
+
+    if not inactive_users:
+        logging.info("All users submitted at least 1 streak today.")
+        return
+
+    quote = get_random_quote()
+    mentions = "\n".join([f"[{name}](tg://user?id={uid})" for uid, name in inactive_users])
+    message = f"{quote}\n\nThese champions haven’t hit their streak today:\n{mentions}"
+
+    try:
+        await app.bot.send_message(
+            chat_id=group_chat_id,
+            text=message,
+            parse_mode="Markdown"
+        )
+        logging.info("Reminder message sent.")
+    except Exception as e:
+        logging.error("Failed to send reminder", exc_info=True)
+
+# --- Main ---
 if __name__ == '__main__':
     init_db()
 
     TOKEN = os.getenv("BOT_TOKEN")
+    GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
+
     if not TOKEN:
-        raise Exception("BOT_TOKEN environment variable is not set!")
+        raise Exception("BOT_TOKEN is not set!")
 
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT, handle_all_text))
+
+    scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
+    scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=0, args=[app])
+    scheduler.start()
 
     print("Bot is running...")
     app.run_polling()
