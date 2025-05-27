@@ -20,9 +20,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# --- Database setup ---
 DB_NAME = "streaks.db"
 
+# --- Database setup ---
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -31,73 +31,80 @@ def init_db():
             chat_id TEXT,
             user_id TEXT,
             user_name TEXT,
-            streak INTEGER,
+            streak INTEGER DEFAULT 0,
             last_date TEXT,
-            count_today INTEGER,
+            count_today INTEGER DEFAULT 0,
             PRIMARY KEY (chat_id, user_id)
         )
     """)
-    try:
-        c.execute("ALTER TABLE streaks ADD COLUMN count_today INTEGER")
-    except sqlite3.OperationalError:
-        pass
     conn.commit()
     conn.close()
 
+# --- Track user if not already in DB ---
+def ensure_user_exists(chat_id, user_id, user_name):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT 1 FROM streaks WHERE chat_id=? AND user_id=?", (chat_id, user_id))
+    if not c.fetchone():
+        c.execute("""
+            INSERT INTO streaks (chat_id, user_id, user_name, streak, count_today)
+            VALUES (?, ?, ?, 0, 0)
+        """, (chat_id, user_id, user_name))
+        logging.info(f"Added new user to DB: {user_name}")
+    conn.commit()
+    conn.close()
+
+# --- Update streak on + or ++ ---
 def update_streak(chat_id, user_id, user_name):
     today = str(datetime.date.today())
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-
     c.execute("SELECT streak, last_date, count_today FROM streaks WHERE chat_id=? AND user_id=?", (chat_id, user_id))
     row = c.fetchone()
 
     if row:
-        current_streak, last_date, count_today = row
-
+        streak, last_date, count_today = row
         if last_date != today:
-            current_streak += 1
+            streak += 1
             count_today = 1
-            c.execute("""
-                UPDATE streaks
-                SET streak=?, last_date=?, user_name=?, count_today=?
-                WHERE chat_id=? AND user_id=?
-            """, (current_streak, today, user_name, count_today, chat_id, user_id))
-            streak_incremented = True
-
         elif count_today < 2:
-            current_streak += 1
+            streak += 1
             count_today += 1
-            c.execute("""
-                UPDATE streaks
-                SET streak=?, count_today=?, user_name=?
-                WHERE chat_id=? AND user_id=?
-            """, (current_streak, count_today, user_name, chat_id, user_id))
-            streak_incremented = True
-
         else:
             logging.info(f"{user_name} already reached max streaks today")
-            streak_incremented = False
+            conn.close()
+            return False
+
+        c.execute("""
+            UPDATE streaks
+            SET streak=?, last_date=?, user_name=?, count_today=?
+            WHERE chat_id=? AND user_id=?
+        """, (streak, today, user_name, count_today, chat_id, user_id))
+
     else:
         c.execute("""
             INSERT INTO streaks (chat_id, user_id, user_name, streak, last_date, count_today)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (chat_id, user_id, user_name, 1, today, 1))
-        streak_incremented = True
+            VALUES (?, ?, ?, 1, ?, 1)
+        """, (chat_id, user_id, user_name, today))
 
     conn.commit()
     conn.close()
-    return streak_incremented
+    return True
 
+# --- Get all streaks for group ---
 def get_streaks(chat_id):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT user_name, streak FROM streaks WHERE chat_id=? ORDER BY streak DESC", (chat_id,))
+    c.execute("""
+        SELECT user_name, streak FROM streaks
+        WHERE chat_id=?
+        ORDER BY streak DESC
+    """, (chat_id,))
     results = c.fetchall()
     conn.close()
     return results
 
-# --- Motivational Quotes ---
+# --- Motivational quotes ---
 motivational_quotes = [
     "🏋️‍♂️ Don’t wish for it. Work for it.",
     "🔥 Sweat now, shine later.",
@@ -110,7 +117,7 @@ motivational_quotes = [
 def get_random_quote():
     return choice(motivational_quotes)
 
-# --- Send 🔥 reaction using Telegram API ---
+# --- Send 🔥 emoji reaction ---
 async def send_fire_reaction(bot_token: str, chat_id: str, message_id: int):
     url = f"https://api.telegram.org/bot{bot_token}/setMessageReaction"
     payload = {
@@ -129,50 +136,7 @@ async def send_fire_reaction(bot_token: str, chat_id: str, message_id: int):
     except Exception as e:
         logging.error("HTTP request to set reaction failed", exc_info=True)
 
-# --- Message Handler ---
-async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
-    text = update.message.text.strip()
-    user_name = update.message.from_user.full_name
-    chat_id = str(update.message.chat.id)
-    user_id = str(update.message.from_user.id)
-    message_id = update.message.message_id
-
-    logging.info(f"Received message: {text} from {user_name}")
-    logging.info(f"Chat ID: {chat_id}")
-
-    # Handle streak update
-    if any(token in ['+', '++'] for token in text.split()):
-        streak_incremented = update_streak(chat_id, user_id, user_name)
-        if streak_incremented:
-            bot_token = context.bot.token
-            await send_fire_reaction(bot_token, chat_id, message_id)
-        return
-
-    # Handle /streaks command
-    if text.startswith("/streaks"):
-        logging.info("Manual /streaks handler triggered")
-        results = get_streaks(chat_id)
-
-        if not results:
-            try:
-                await context.bot.send_message(chat_id=chat_id, text="No streaks yet.")
-            except Exception as e:
-                logging.error("Failed to send streaks message", exc_info=True)
-            return
-
-        msg = "🔥 *Current Streaks:*\n"
-        for name, streak in results:
-            msg += f"{name}: {streak}\n"
-
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-        except Exception as e:
-            logging.error("Failed to send streaks message", exc_info=True)
-
-# --- Daily Reminder ---
+# --- Daily reminder job ---
 async def send_daily_reminder(app):
     logging.info("Running daily reminder job...")
 
@@ -188,7 +152,6 @@ async def send_daily_reminder(app):
     users = c.fetchall()
     conn.close()
 
-    # Tag users who haven't done at least 1 streak today
     inactive_users = [
         (uid, name) for uid, name, last_date in users
         if last_date != today
@@ -210,9 +173,48 @@ async def send_daily_reminder(app):
         )
         logging.info("Reminder message sent.")
     except Exception as e:
-        logging.error("Failed to send reminder", exc_info=True)
+        logging.error("Failed to send reminder message", exc_info=True)
 
-# --- Main ---
+# --- Message handler ---
+async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
+
+    text = update.message.text.strip()
+    user = update.message.from_user
+    user_name = user.full_name
+    user_id = str(user.id)
+    chat_id = str(update.message.chat.id)
+    message_id = update.message.message_id
+
+    logging.info(f"Received message: {text} from {user_name} ({chat_id})")
+
+    # Track user if not known yet
+    ensure_user_exists(chat_id, user_id, user_name)
+
+    # Handle streak increment
+    if any(token in ['+', '++'] for token in text.split()):
+        streak_incremented = update_streak(chat_id, user_id, user_name)
+        if streak_incremented:
+            await send_fire_reaction(context.bot.token, chat_id, message_id)
+        return
+
+    # Handle /streaks
+    if text.startswith("/streaks"):
+        logging.info("/streaks command triggered")
+        results = get_streaks(chat_id)
+
+        if not results:
+            await context.bot.send_message(chat_id=chat_id, text="No users tracked yet.")
+            return
+
+        msg = "🔥 *Current Streaks:*\n"
+        for name, streak in results:
+            msg += f"{name}: {streak}\n"
+
+        await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+
+# --- App startup ---
 if __name__ == '__main__':
     init_db()
 
