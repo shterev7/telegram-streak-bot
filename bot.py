@@ -3,6 +3,7 @@ import logging
 import datetime
 import httpx
 import asyncpg
+import re
 from random import choice
 
 from telegram import Update
@@ -83,31 +84,31 @@ async def get_streaks(conn, chat_id):
 
 # --- Motivational Quotes ---
 motivational_quotes = [
-    "🏋️‍♂️ Don’t wish for it. Work for it.",
-    "🔥 Sweat now, shine later.",
-    "💪 The only bad workout is the one you didn’t do.",
-    "🚀 One more rep. One more step. Let’s go!",
-    "📈 Progress starts with showing up!",
-    "⚡ Discipline = freedom. Hit your streak!"
+    "\ud83c\udfcb\ufe0f Don’t wish for it. Work for it.",
+    "\ud83d\udd25 Sweat now, shine later.",
+    "\ud83d\udcaa The only bad workout is the one you didn’t do.",
+    "\ud83d\ude80 One more rep. One more step. Let’s go!",
+    "\ud83d\udcc8 Progress starts with showing up!",
+    "\u26a1 Discipline = freedom. Hit your streak!"
 ]
 
 def get_random_quote():
     return choice(motivational_quotes)
 
-# --- Send 🔥 emoji reaction via Bot API ---
+# --- Send \ud83d\udd25 emoji reaction via Bot API ---
 async def send_fire_reaction(bot_token: str, chat_id: str, message_id: int):
     url = f"https://api.telegram.org/bot{bot_token}/setMessageReaction"
     payload = {
         "chat_id": chat_id,
         "message_id": message_id,
-        "reaction": [{"type": "emoji", "emoji": "🔥"}]
+        "reaction": [{"type": "emoji", "emoji": "\ud83d\udd25"}]
     }
 
     try:
         async with httpx.AsyncClient() as client:
             r = await client.post(url, json=payload)
             if r.status_code != 200:
-                logging.error(f"Failed to set 🔥 reaction: {r.status_code} - {r.text}")
+                logging.error(f"Failed to set \ud83d\udd25 reaction: {r.status_code} - {r.text}")
     except Exception as e:
         logging.error("HTTP request to set reaction failed", exc_info=True)
 
@@ -168,8 +169,8 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = await connect_db()
     await ensure_user_exists(conn, chat_id, user_id, user_name)
 
-    # Handle + or ++
-    if any(token in ['+', '++'] for token in text.split()):
+    # Handle + or ++ via regex
+    if re.search(r'(?<!\+)(\+{1,2})(?!\+)', text):
         updated = await update_streak(conn, chat_id, user_id, user_name)
         if updated:
             await send_fire_reaction(context.bot.token, chat_id, message_id)
@@ -182,7 +183,7 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not results:
             await context.bot.send_message(chat_id=chat_id, text="No users tracked yet.")
         else:
-            msg = "🔥 *Current Streaks:*\n"
+            msg = "\ud83d\udd25 *Current Streaks:*\n"
             for row in results:
                 msg += f"{row['user_name']}: {row['streak']}\n"
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
@@ -201,5 +202,4 @@ if __name__ == '__main__':
     scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=25, args=[app])
     scheduler.start()
 
-    print("Bot is running with Supabase backend...")
     app.run_polling()
