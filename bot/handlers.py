@@ -14,7 +14,7 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(user.id)
     chat_id = str(update.message.chat.id)
     message_id = update.message.message_id
-    text = update.message.text.strip()
+    text = (update.message.text or update.message.caption or "").strip()
 
     conn = await connect_db()
     await ensure_user_exists(conn, chat_id, user_id, user_name)
