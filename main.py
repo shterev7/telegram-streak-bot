@@ -17,7 +17,8 @@ if __name__ == '__main__':
         raise Exception("BOT_TOKEN not set!")
 
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT, handle_all_text))
+    message_filters = filters.TEXT | filters.PHOTO | filters.VIDEO | filters.DOCUMENT | filters.CAPTION
+    app.add_handler(MessageHandler(message_filters, handle_all_text))
 
     scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
     scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=0, args=[app])
