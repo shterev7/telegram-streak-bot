@@ -19,7 +19,7 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = await connect_db()
     await ensure_user_exists(conn, chat_id, user_id, user_name)
 
-    if re.search(r'(?<![-])\+{1,2}(?![-])', text):
+    if re.search(r'(?<!-)\+{1,2}(?!-)', text):
         updated = await update_streak(conn, chat_id, user_id, user_name)
         if updated:
             await send_fire_reaction(context.bot.token, chat_id, message_id)
