@@ -1,4 +1,4 @@
-# 💪 Telegram Streak Bot
+# Telegram Streak Bot
 
 A Telegram bot that helps groups stay accountable by tracking daily workout streaks using `+` or `++` messages. It motivates users, reacts to their streak updates, and reminds inactive members with daily motivational quotes.
 
@@ -6,11 +6,11 @@ A Telegram bot that helps groups stay accountable by tracking daily workout stre
 
 ## 🚀 Features
 
-- 🔥 Reacts to messages containing `+` or `++` (even in captions)
-- 🏆 Tracks daily streaks per user
-- ✅ Accepts `+` or `++` embedded in text (e.g. `++training`, `get+fit`)
-- 📊 `/streaks` command shows current streak leaderboard
-- 🕒 Sends daily motivational reminders to users who haven't logged a streak
+- Reacts to messages containing `+` or `++` (even in captions)
+- Tracks daily streaks per user
+- Accepts `+` or `++` embedded in text (e.g. `++training`, `get+fit`)
+- `/streaks` command shows current streak leaderboard
+- Sends daily motivational reminders to users who haven't logged a streak
 
 ---
 
