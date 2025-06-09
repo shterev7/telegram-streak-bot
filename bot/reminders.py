@@ -1,12 +1,14 @@
 import os
 import datetime
-from .db import connect_db, store_daily_quest
+from pytz import timezone
+from .db import connect_db
 from .utils import get_random_quote
-from .quests import get_random_quest
+from .quests import generate_daily_quest, fetch_daily_quest
 
 
 async def send_daily_reminder(app):
-    """Reminder function for users who haven't met their streak today"""
+    """Notify users who haven’t submitted their streak today."""
+
     group_chat_id = os.getenv("GROUP_CHAT_ID")
     if not group_chat_id:
         return
@@ -18,7 +20,9 @@ async def send_daily_reminder(app):
         group_chat_id
     )
 
-    inactive = [(r['user_id'], r['user_name']) for r in rows if r['last_date'] != today]
+    inactive = [
+        (r['user_id'], r['user_name']) for r in rows if r['last_date'] != today
+    ]
 
     if not inactive:
         await conn.close()
@@ -26,30 +30,35 @@ async def send_daily_reminder(app):
 
     quote = get_random_quote()
     mentions = "\n".join([f"[{name}](tg://user?id={uid})" for uid, name in inactive])
-    message = f"{quote}\n\nThese champions haven’t hit their streak today:\n{mentions}"
+    message = f"{quote}\n\n❗️These champions haven’t hit their streak today:\n{mentions}"
 
     await app.bot.send_message(chat_id=group_chat_id, text=message, parse_mode="Markdown")
     await conn.close()
 
 
 async def send_daily_quest(app):
-    """Daily quest start announcement"""
+    """Generate and send the daily quest announcement at 10:00 EET."""
 
     group_chat_id = os.getenv("GROUP_CHAT_ID")
     if not group_chat_id:
         return
 
-    today = datetime.date.today()
-    description, tag = get_random_quest()
+    await generate_daily_quest(group_chat_id)
+
+    tz = timezone("Europe/Sofia")
+    today = datetime.datetime.now(tz).date()
 
     conn = await connect_db()
-    await store_daily_quest(conn, group_chat_id, description, tag, today)
+    quest = await fetch_daily_quest(conn, group_chat_id, today)
     await conn.close()
 
-    message = (
-        f"❗️ *Daily Quest* ❗️\n"
-        f"{description}\n\n"
-        f"Use `#{tag}` in your message to complete the quest and earn a point!"
-    )
-
-    await app.bot.send_message(chat_id=group_chat_id, text=message, parse_mode="Markdown")
+    if quest:
+        await app.bot.send_message(
+            chat_id=group_chat_id,
+            text=(
+                f"❗️ *Today's Quest* ❗️\n"
+                f"{quest['description']}\n\n"
+                f"Use `#{quest['tag']}` to complete it before 22:00!"
+            ),
+            parse_mode="Markdown"
+        )
