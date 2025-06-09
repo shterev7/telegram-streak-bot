@@ -16,6 +16,8 @@ def get_random_quote():
 
 
 async def send_fire_reaction(bot_token, chat_id, message_id):
+    """Send fire emoji reaction to users who met their streak or complete a quest today"""
+
     url = f"https://api.telegram.org/bot{bot_token}/setMessageReaction"
     payload = {
         "chat_id": chat_id,
