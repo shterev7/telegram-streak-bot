@@ -21,7 +21,9 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.ALL, handle_all_text))
 
     # Commands
-    app.add_handler(MessageHandler(filters.COMMAND, handle_command))
+    app.add_handler(CommandHandler("streaks", handle_command))
+    app.add_handler(CommandHandler("quest", handle_command))
+    app.add_handler(CommandHandler("questscore", handle_command))
 
     # Scheduler for reminders and daily quest announcements
     scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
