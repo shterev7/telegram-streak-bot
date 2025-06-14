@@ -1,7 +1,7 @@
 import os
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from bot.handlers import handle_text_message, handle_streaks, handle_quest, handle_quest_score
+from bot.handlers import handle_all_text, handle_command
 from bot.reminders import send_daily_reminder, send_daily_quest
 
 if __name__ == "__main__":
@@ -11,18 +11,16 @@ if __name__ == "__main__":
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Commands
-    app.add_handler(CommandHandler("streaks", handle_streaks))
-    app.add_handler(CommandHandler("quest", handle_quest))
-    app.add_handler(CommandHandler("questscore", handle_quest_score))
+    # Command handlers
+    app.add_handler(MessageHandler(filters.COMMAND, handle_command))
 
-    # Text & caption handler
-    app.add_handler(MessageHandler(filters.ALL, handle_text_message))
+    # Text, captions
+    app.add_handler(MessageHandler(filters.TEXT | filters.Caption, handle_all_text))
 
-    # Scheduler for daily tasks
+    # Daily jobs
     scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
-    scheduler.add_job(send_daily_reminder, trigger="cron", hour=21, minute=0, args=[app])
-    scheduler.add_job(send_daily_quest, trigger="cron", hour=10, minute=0, args=[app])
+    scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=0, args=[app])
+    scheduler.add_job(send_daily_quest, "cron", hour=10, minute=0, args=[app])
     scheduler.start()
 
     print("Bot is running...")
