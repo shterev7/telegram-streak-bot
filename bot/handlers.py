@@ -10,7 +10,7 @@ from .quests import fetch_daily_quests, fetch_user_quest_completions,  record_qu
 
 
 # Regex pattern to detect + or ++ without adjacent hyphens
-PLUS_PATTERN = re.compile(r'(?<![\w\d\-])\+{1,2}(?![\w\d\-])')
+PLUS_PATTERN = re.compile(r'(?<!-)\+{1,2}(?!-)')
 
 
 async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
