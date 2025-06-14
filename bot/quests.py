@@ -3,52 +3,59 @@ import random
 from .db import connect_db
 
 
-async def generate_daily_quest(chat_id: str):
-    """Insert a random quest from quest_templates into daily_quests, excluding yesterday’s."""
-
+async def generate_daily_quests(chat_id: str):
+    """
+    Select 2 unique random quests and store them in daily_quests table,
+    excluding any used in the past 2 days.
+    """
     today = datetime.date.today()
-    yesterday = today - datetime.timedelta(days=1)
+    one_day_ago = today - datetime.timedelta(days=1)
+    two_days_ago = today - datetime.timedelta(days=2)
 
     conn = await connect_db()
 
-    # Skip if today's quest is already set
-    existing = await conn.fetchrow(
-        "SELECT 1 FROM daily_quests WHERE chat_id=$1 AND date=$2",
+    # Skip if today's quests already exist
+    existing = await conn.fetch(
+        "SELECT tag FROM daily_quests WHERE chat_id=$1 AND date=$2",
         chat_id, today
     )
-    if existing:
+    if len(existing) >= 2:
         await conn.close()
         return
 
-    # Get yesterday's quest (to avoid repetition)
-    yesterday_row = await conn.fetchrow(
-        "SELECT tag FROM daily_quests WHERE chat_id=$1 AND date=$2",
-        chat_id, yesterday
+    # Get used tags from past 2 days
+    recent_tags = await conn.fetch(
+        "SELECT tag FROM daily_quests WHERE chat_id=$1 AND date IN ($2, $3)",
+        chat_id, one_day_ago, two_days_ago
     )
-    yesterday_tag = yesterday_row['tag'] if yesterday_row else None
+    recent_tags = set(row['tag'] for row in recent_tags)
 
-    # Fetch all quest templates
+    # Get all templates
     templates = await conn.fetch("SELECT description, tag FROM quest_templates")
-    if not templates:
-        await conn.close()
-        return
+    candidates = [t for t in templates if t['tag'] not in recent_tags]
 
-    # Filter out yesterday’s quest if possible
-    filtered = [q for q in templates if q['tag'] != yesterday_tag] if len(templates) > 1 else templates
-    selected = random.choice(filtered)
+    # Fallback if not enough unique candidates
+    if len(candidates) < 2:
+        candidates = templates
 
-    await conn.execute("""
-        INSERT INTO daily_quests (chat_id, description, tag, date)
-        VALUES ($1, $2, $3, $4)
-    """, chat_id, selected["description"], selected["tag"], today)
+    selected = random.sample(candidates, 2)
+    for quest in selected:
+        await conn.execute(
+            """
+            INSERT INTO daily_quests (chat_id, description, tag, date)
+            VALUES ($1, $2, $3, $4)
+            """,
+            chat_id, quest['description'], quest['tag'], today
+        )
 
     await conn.close()
 
 
-async def fetch_daily_quest(conn, chat_id: str, date: datetime.date):
-    """Return the daily quest for a given chat and date."""
-
-    return await conn.fetchrow(
+async def fetch_daily_quests(conn, chat_id: str, date: datetime.date):
+    """
+    Return all quests for a given chat and date.
+    """
+    return await conn.fetch(
         "SELECT description, tag FROM daily_quests WHERE chat_id=$1 AND date=$2",
         chat_id, date
     )

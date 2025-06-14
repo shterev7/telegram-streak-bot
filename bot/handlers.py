@@ -1,24 +1,15 @@
-import re
 import datetime
-from pytz import timezone
+import re
+import os
 from telegram import Update
 from telegram.ext import ContextTypes
-from .db import (
-    connect_db,
-    ensure_user_exists,
-    update_streak,
-    get_streaks,
-    has_completed_quest_today,
-    update_quest_completion,
-    get_quest_scores,
-    fetch_daily_quest,
-)
+from .db import connect_db
+from .quests import fetch_daily_quests
 from .utils import send_fire_reaction
 
 
 async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Functionality handler of streaks and quests"""
-
     if not update.message:
         return
 
@@ -27,82 +18,135 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(user.id)
     chat_id = str(update.message.chat.id)
     message_id = update.message.message_id
-    text = update.message.text or update.message.caption or ""
-    text = text.strip()
+    text = (update.message.text or update.message.caption or "").strip()
 
     conn = await connect_db()
-    await ensure_user_exists(conn, chat_id, user_id, user_name)
 
-    # Streak Handling
+    # Track group chats
+    if update.message.chat.type in ["group", "supergroup"]:
+        await conn.execute("""
+            INSERT INTO group_chats (chat_id, title)
+            VALUES ($1, $2)
+            ON CONFLICT (chat_id) DO UPDATE SET title = EXCLUDED.title
+        """, chat_id, update.message.chat.title)
+
+    # Ensure user is registered
+    await conn.execute("""
+        INSERT INTO streaks (chat_id, user_id, user_name)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (chat_id, user_id) DO UPDATE SET user_name = EXCLUDED.user_name
+    """, chat_id, user_id, user_name)
+
+    today = datetime.date.today()
+
+    # Streak check
     if re.search(r'(?<!-)\+{1,2}(?!-)', text):
-        updated = await update_streak(conn, chat_id, user_id, user_name)
-        if updated:
+        streak_row = await conn.fetchrow("""
+            SELECT last_date, count_today, streak FROM streaks
+            WHERE chat_id=$1 AND user_id=$2
+        """, chat_id, user_id)
+
+        if streak_row:
+            last_date = streak_row['last_date']
+            count_today = streak_row['count_today']
+            streak = streak_row['streak']
+
+            if last_date != today:
+                streak += 1
+                count_today = 1
+            elif count_today < 2:
+                streak += 1
+                count_today += 1
+            else:
+                await conn.close()
+                return
+
+            await conn.execute("""
+                UPDATE streaks SET last_date=$1, count_today=$2, streak=$3
+                WHERE chat_id=$4 AND user_id=$5
+            """, today, count_today, streak, chat_id, user_id)
+
             await send_fire_reaction(context.bot.token, chat_id, message_id)
 
-    # Quest Completion
-    tz = timezone("Europe/Sofia")
-    now = datetime.datetime.now(tz)
-    today = now.date()
-    cutoff = tz.localize(datetime.datetime.combine(today, datetime.time(22, 0)))
+    # Quest completion
+    quests = await fetch_daily_quests(conn, chat_id, today)
+    current_hour = datetime.datetime.now().hour
 
-    quest_row = await fetch_daily_quest(conn, chat_id, today)
-
-    if quest_row:
-        quest_tag = f"#{quest_row['tag'].lower()}"
-
-        if quest_tag in text.lower():
-            if now > cutoff:
+    for quest in quests:
+        if quest['tag'] in text.lower():
+            if current_hour >= 22:
                 await context.bot.send_message(
                     chat_id=chat_id,
-                    text=f"⏰ Sorry {user_name}, today's quest deadline has passed. Try again tomorrow!"
+                    reply_to_message_id=message_id,
+                    text="⏰ Sorry, quest completions are only accepted before 22:00 EET."
                 )
-            elif not await has_completed_quest_today(conn, chat_id, user_id):
-                await update_quest_completion(conn, chat_id, user_id, user_name)
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=f"✅ {user_name} completed today's quest!"
-                )
+                continue
+
+            existing = await conn.fetchrow("""
+                SELECT 1 FROM quest_completions
+                WHERE chat_id=$1 AND user_id=$2 AND tag=$3 AND date=$4
+            """, chat_id, user_id, quest['tag'], today)
+
+            if not existing:
+                await conn.execute("""
+                    INSERT INTO quest_completions (chat_id, user_id, user_name, tag, date)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, chat_id, user_id, user_name, quest['tag'], today)
                 await send_fire_reaction(context.bot.token, chat_id, message_id)
 
-    # /streaks command
+    await conn.close()
+
+
+async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Functionality handler for commands"""
+    if not update.message:
+        return
+
+    chat_id = str(update.message.chat.id)
+    text = update.message.text.strip()
+
+    conn = await connect_db()
+
     if text.startswith("/streaks"):
-        results = await get_streaks(conn, chat_id)
-        if not results:
-            await context.bot.send_message(chat_id=chat_id, text="No users tracked yet.")
-        else:
-            msg = "🔥 *Current Streaks:*\n"
+        results = await conn.fetch("""
+            SELECT user_name, streak FROM streaks
+            WHERE chat_id=$1 ORDER BY streak DESC
+        """, chat_id)
+
+        if results:
+            message = "🔥 *Current Streaks:*\n"
             for row in results:
-                msg += f"{row['user_name']}: {row['streak']}\n"
-            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-
-    # /questscore leaderboard command
-    if text.startswith("/questscore"):
-        scores = await get_quest_scores(conn, chat_id)
-        if not scores:
-            await context.bot.send_message(chat_id=chat_id, text="No quest completions yet.")
+                message += f"{row['user_name']}: {row['streak']}\n"
         else:
-            msg = "🏆 *Quest Leaderboard:*\n"
-            for row in scores:
-                msg += f"{row['user_name']}: {row['quests']}\n"
-            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+            message = "No streaks found."
 
-    # /quest today command
-    if text.startswith("/quest"):
-        quest_row = await fetch_daily_quest(conn, chat_id, today)
-        if not quest_row:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="⚠️ No quest has been announced for today yet."
-            )
+        await context.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+
+    elif text.startswith("/questscore"):
+        results = await conn.fetch("""
+            SELECT user_name, COUNT(*) as points FROM quest_completions
+            WHERE chat_id=$1 GROUP BY user_name ORDER BY points DESC
+        """, chat_id)
+
+        if results:
+            message = "🏆 *Quest Leaderboard:*\n"
+            for row in results:
+                message += f"{row['user_name']}: {row['points']}\n"
         else:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=(
-                    f"❗️ *Today's Quest* ❗️\n"
-                    f"{quest_row['description']}\n\n"
-                    f"Use `#{quest_row['tag']}` to complete it!"
-                ),
-                parse_mode="Markdown"
-            )
+            message = "No completed quests yet."
+
+        await context.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+
+    elif text.startswith("/quest"):
+        today = datetime.date.today()
+        quests = await fetch_daily_quests(conn, chat_id, today)
+        if quests:
+            message = "📢 *Today's Quests:*\n"
+            for q in quests:
+                message += f"- {q['description']}  \\#{q['tag']}\n"
+        else:
+            message = "No quests announced yet."
+
+        await context.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
 
     await conn.close()
