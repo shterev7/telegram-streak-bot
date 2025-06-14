@@ -1,35 +1,29 @@
 import os
-import logging
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from bot.handlers import handle_all_text, handle_command
+from bot.handlers import handle_text_message, handle_streaks, handle_quest, handle_quest_score
 from bot.reminders import send_daily_reminder, send_daily_quest
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     TOKEN = os.getenv("BOT_TOKEN")
     if not TOKEN:
-        raise Exception("BOT_TOKEN is not set")
+        raise Exception("BOT_TOKEN not set in environment variables.")
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Register handlers
-    # app.add_handler(MessageHandler(filters.ALL, handle_all_text))
-    app.add_handler(MessageHandler(filters.TEXT | filters.Caption, handle_all_text))
-
     # Commands
-    app.add_handler(CommandHandler("streaks", handle_command))
-    app.add_handler(CommandHandler("quest", handle_command))
-    app.add_handler(CommandHandler("questscore", handle_command))
+    app.add_handler(CommandHandler("streaks", handle_streaks))
+    app.add_handler(CommandHandler("quest", handle_quest))
+    app.add_handler(CommandHandler("questscore", handle_quest_score))
 
-    # Scheduler for reminders and daily quest announcements
+    # Text & caption handler
+    app.add_handler(MessageHandler(filters.ALL, handle_text_message))
+
+    # Scheduler for daily tasks
     scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
-    scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=0, args=[app])
-    scheduler.add_job(send_daily_quest, "cron", hour=10, minute=0, args=[app])
+    scheduler.add_job(send_daily_reminder, trigger="cron", hour=21, minute=0, args=[app])
+    scheduler.add_job(send_daily_quest, trigger="cron", hour=10, minute=0, args=[app])
     scheduler.start()
 
+    print("Bot is running...")
     app.run_polling()

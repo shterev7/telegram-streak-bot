@@ -3,59 +3,66 @@ import random
 from .db import connect_db
 
 
-async def generate_daily_quests(chat_id: str):
-    """
-    Select 2 unique random quests and store them in daily_quests table,
-    excluding any used in the past 2 days.
-    """
-    today = datetime.date.today()
-    one_day_ago = today - datetime.timedelta(days=1)
-    two_days_ago = today - datetime.timedelta(days=2)
-
+async def generate_daily_quests(chat_id):
     conn = await connect_db()
 
-    # Skip if today's quests already exist
-    existing = await conn.fetch(
-        "SELECT tag FROM daily_quests WHERE chat_id=$1 AND date=$2",
-        chat_id, today
-    )
-    if len(existing) >= 2:
+    # Fetch existing quests from past 2 days
+    existing = await conn.fetch("""
+        SELECT tag FROM daily_quests
+        WHERE chat_id=$1 AND date >= $2
+    """, chat_id, datetime.date.today() - datetime.timedelta(days=2))
+
+    used_tags = {row['tag'] for row in existing}
+
+    # Load available quests from quest_templates
+    rows = await conn.fetch("SELECT description, tag FROM quest_templates")
+    all_quests = [dict(row) for row in rows if row['tag'] not in used_tags]
+
+    if len(all_quests) < 2:
         await conn.close()
-        return
+        return []
 
-    # Get used tags from past 2 days
-    recent_tags = await conn.fetch(
-        "SELECT tag FROM daily_quests WHERE chat_id=$1 AND date IN ($2, $3)",
-        chat_id, one_day_ago, two_days_ago
-    )
-    recent_tags = set(row['tag'] for row in recent_tags)
-
-    # Get all templates
-    templates = await conn.fetch("SELECT description, tag FROM quest_templates")
-    candidates = [t for t in templates if t['tag'] not in recent_tags]
-
-    # Fallback if not enough unique candidates
-    if len(candidates) < 2:
-        candidates = templates
-
-    selected = random.sample(candidates, 2)
+    selected = random.sample(all_quests, 2)
+    today = datetime.date.today()
     for quest in selected:
-        await conn.execute(
-            """
+        await conn.execute("""
             INSERT INTO daily_quests (chat_id, description, tag, date)
             VALUES ($1, $2, $3, $4)
-            """,
-            chat_id, quest['description'], quest['tag'], today
-        )
+        """, chat_id, quest['description'], quest['tag'], today)
 
     await conn.close()
+    return selected
 
 
-async def fetch_daily_quests(conn, chat_id: str, date: datetime.date):
-    """
-    Return all quests for a given chat and date.
-    """
-    return await conn.fetch(
-        "SELECT description, tag FROM daily_quests WHERE chat_id=$1 AND date=$2",
-        chat_id, date
-    )
+async def fetch_daily_quests(conn, chat_id):
+    today = datetime.date.today()
+    return await conn.fetch("""
+        SELECT description, tag FROM daily_quests
+        WHERE chat_id=$1 AND date=$2
+    """, chat_id, today)
+
+
+async def record_quest_completion(conn, chat_id, user_id, user_name, tag):
+    today = datetime.date.today()
+    await conn.execute("""
+        INSERT INTO quest_completions (chat_id, user_id, user_name, tag, date)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT DO NOTHING
+    """, chat_id, user_id, user_name, tag, today)
+
+
+async def fetch_user_quest_completions(conn, chat_id, user_id):
+    today = datetime.date.today()
+    return await conn.fetch("""
+        SELECT tag FROM quest_completions
+        WHERE chat_id=$1 AND user_id=$2 AND date=$3
+    """, chat_id, user_id, today)
+
+
+async def calculate_quest_scores(conn, chat_id):
+    return await conn.fetch("""
+        SELECT user_name, COUNT(*) as count FROM quest_completions
+        WHERE chat_id=$1
+        GROUP BY user_name
+        ORDER BY count DESC
+    """, chat_id)

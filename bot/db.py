@@ -1,11 +1,11 @@
 import asyncpg
 import os
-from typing import Any, Coroutine
 
 
-async def connect_db() -> Coroutine:
-    """Connect to the PostgreSQL database using environment variables"""
-
+async def connect_db():
+    """
+    Establish and return a connection to the PostgreSQL database using environment variables.
+    """
     return await asyncpg.connect(
         host=os.getenv("DB_HOST"),
         port=int(os.getenv("DB_PORT")),
@@ -15,9 +15,10 @@ async def connect_db() -> Coroutine:
     )
 
 
-async def ensure_user_exists(conn, chat_id: Any, user_id: Any, user_name: Any):
-    """Ensure a user is registered in the streaks table"""
-
+async def ensure_user_exists(conn, chat_id: str, user_id: str, user_name: str):
+    """
+    Ensure that a user exists in the 'streaks' table. If not, insert them with default values.
+    """
     result = await conn.fetchrow("""
         SELECT 1 FROM streaks WHERE chat_id=$1 AND user_id=$2
     """, chat_id, user_id)
@@ -28,11 +29,15 @@ async def ensure_user_exists(conn, chat_id: Any, user_id: Any, user_name: Any):
         """, chat_id, user_id, user_name)
 
 
-async def update_streak(conn, chat_id: Any, user_id: Any, user_name: Any):
-    """Update streak count for a user"""
+async def update_streak(conn, chat_id: str, user_id: str, user_name: str) -> bool:
+    """
+    Update the streak count for a user. Increment the streak if a new day,
+    and allow a maximum of 2 increments per day.
+    Returns True if streak was incremented, otherwise False.
+    """
+    import datetime
+    today = datetime.date.today()
 
-    from datetime import date
-    today = date.today()
     row = await conn.fetchrow("""
         SELECT streak, last_date, count_today FROM streaks
         WHERE chat_id=$1 AND user_id=$2
@@ -47,8 +52,7 @@ async def update_streak(conn, chat_id: Any, user_id: Any, user_name: Any):
             streak += 1
             count_today += 1
         else:
-            return False  # Max streaks for today
-
+            return False  # Already maxed today
         await conn.execute("""
             UPDATE streaks
             SET streak=$1, last_date=$2, user_name=$3, count_today=$4
@@ -59,13 +63,13 @@ async def update_streak(conn, chat_id: Any, user_id: Any, user_name: Any):
             INSERT INTO streaks (chat_id, user_id, user_name, streak, last_date, count_today)
             VALUES ($1, $2, $3, 1, $4, 1)
         """, chat_id, user_id, user_name, today)
-
     return True
 
 
-async def get_streaks(conn, chat_id: Any):
-    """Get all streaks in a chat"""
-
+async def get_streaks(conn, chat_id: str):
+    """
+    Retrieve all streaks for users in a given chat, sorted by highest streak.
+    """
     return await conn.fetch("""
         SELECT user_name, streak FROM streaks
         WHERE chat_id=$1
@@ -73,56 +77,36 @@ async def get_streaks(conn, chat_id: Any):
     """, chat_id)
 
 
-async def has_completed_quest_today(conn, chat_id: Any, user_id: Any):
-    """Check if the user completed today's quest"""
-
-    from datetime import date
-    today = date.today()
-    row = await conn.fetchrow("""
-        SELECT 1 FROM quest_completions
-        WHERE chat_id=$1 AND user_id=$2 AND date=$3
-    """, chat_id, user_id, today)
-    return row is not None
-
-
-async def update_quest_completion(conn, chat_id: Any, user_id: Any, user_name: Any):
-    """Log quest completion"""
-
-    from datetime import date
-    today = date.today()
+async def record_quest_completion(conn, chat_id: str, user_id: str, user_name: str, tag: str, date):
+    """
+    Record a user's completion of a quest for a specific date.
+    """
     await conn.execute("""
-        INSERT INTO quest_completions (chat_id, user_id, user_name, date)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO quest_completions (chat_id, user_id, user_name, tag, date)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT DO NOTHING
-    """, chat_id, user_id, user_name, today)
+    """, chat_id, user_id, user_name, tag, date)
 
 
-async def get_quest_scores(conn, chat_id: Any):
-    """Get quest leaderboard"""
+async def has_completed_quest(conn, chat_id: str, user_id: str, tag: str, date) -> bool:
+    """
+    Check if a user has already completed a quest with the given tag on a specific date.
+    """
+    result = await conn.fetchrow("""
+        SELECT 1 FROM quest_completions
+        WHERE chat_id=$1 AND user_id=$2 AND tag=$3 AND date=$4
+    """, chat_id, user_id, tag, date)
+    return result is not None
 
+
+async def get_quest_scoreboard(conn, chat_id: str):
+    """
+    Return a leaderboard showing how many quests each user has completed in a given chat.
+    """
     return await conn.fetch("""
-        SELECT user_name, COUNT(*) as quests
+        SELECT user_name, COUNT(*) as total
         FROM quest_completions
         WHERE chat_id=$1
         GROUP BY user_name
-        ORDER BY quests DESC
+        ORDER BY total DESC
     """, chat_id)
-
-
-async def store_daily_quest(conn, chat_id: Any, description: Any, tag: Any, date: Any):
-    """Store the daily quest persistently"""
-
-    await conn.execute("""
-        INSERT INTO daily_quests (chat_id, description, tag, date)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (chat_id, date) DO NOTHING
-    """, chat_id, description, tag, date)
-
-
-async def fetch_daily_quest(conn, chat_id: Any, date: Any):
-    """Retrieve todays quest"""
-
-    return await conn.fetchrow("""
-        SELECT description, tag FROM daily_quests
-        WHERE chat_id=$1 AND date=$2
-    """, chat_id, date)
