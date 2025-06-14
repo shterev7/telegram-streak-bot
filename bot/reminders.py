@@ -26,7 +26,7 @@ async def send_daily_reminder(app):
 
         quote = get_random_quote()
         mentions = "\n".join([f"[{name}](tg://user?id={uid})" for uid, name in inactive])
-        message = f"{quote}\n\nThese champions haven’t hit their streak today:\n{mentions}"
+        message = f"❗️{quote}\n\nThese champions haven’t hit their streak today:\n{mentions}"
 
         try:
             await app.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
