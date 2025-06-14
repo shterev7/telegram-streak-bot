@@ -18,7 +18,8 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
 
     # Register handlers
-    app.add_handler(MessageHandler(filters.ALL, handle_all_text))
+    # app.add_handler(MessageHandler(filters.ALL, handle_all_text))
+    app.add_handler(MessageHandler(filters.TEXT | filters.Caption, handle_all_text))
 
     # Commands
     app.add_handler(CommandHandler("streaks", handle_command))
