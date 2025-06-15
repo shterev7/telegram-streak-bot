@@ -44,11 +44,12 @@ async def fetch_daily_quests(conn, chat_id):
 
 async def record_quest_completion(conn, chat_id, user_id, user_name, tag):
     today = datetime.date.today()
-    await conn.execute("""
+    result = await conn.execute("""
         INSERT INTO quest_completions (chat_id, user_id, user_name, tag, date)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT DO NOTHING
     """, chat_id, user_id, user_name, tag, today)
+    return result == "INSERT 0 1"
 
 
 async def fetch_user_quest_completions(conn, chat_id, user_id):
