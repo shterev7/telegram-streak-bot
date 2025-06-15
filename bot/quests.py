@@ -53,10 +53,11 @@ async def record_quest_completion(conn, chat_id, user_id, user_name, tag):
 
 async def fetch_user_quest_completions(conn, chat_id, user_id):
     today = datetime.date.today()
-    return await conn.fetch("""
+    rows = await conn.fetch("""
         SELECT tag FROM quest_completions
         WHERE chat_id=$1 AND user_id=$2 AND date=$3
     """, chat_id, user_id, today)
+    return {row["tag"] for row in rows}
 
 
 async def calculate_quest_scores(conn, chat_id):

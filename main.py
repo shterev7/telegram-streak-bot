@@ -1,27 +1,41 @@
 import os
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
+import logging
+from telegram.ext import (
+    ApplicationBuilder,
+    MessageHandler,
+    filters,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from bot.handlers import handle_all_text, handle_command
+from bot.handlers import handle_all_text
 from bot.reminders import send_daily_reminder, send_daily_quest
 
-if __name__ == "__main__":
-    TOKEN = os.getenv("BOT_TOKEN")
-    if not TOKEN:
-        raise Exception("BOT_TOKEN not set in environment variables.")
+# --- Logging setup ---
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-    app = ApplicationBuilder().token(TOKEN).build()
 
-    # Command handlers
-    app.add_handler(MessageHandler(filters.COMMAND, handle_command))
+# --- Bot Setup ---
+def main():
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        raise Exception("BOT_TOKEN environment variable not set")
 
-    # Text, captions
-    app.add_handler(MessageHandler(filters.TEXT | filters.Caption, handle_all_text))
+    app = ApplicationBuilder().token(token).build()
 
-    # Daily jobs
+    # Register handler for all text/caption messages
+    app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, handle_all_text))
+
+    # Scheduler for reminders and daily quests
     scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
-    scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=0, args=[app])
     scheduler.add_job(send_daily_quest, "cron", hour=10, minute=0, args=[app])
+    scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=0, args=[app])
     scheduler.start()
 
-    print("Bot is running...")
+    logging.info("Bot is running...")
     app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
