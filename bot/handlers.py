@@ -86,17 +86,6 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg += f"{r['user_name']}: {r['streak']}\n"
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
 
-    # Handle /quest command
-    elif text.startswith("/quest"):
-        quests = await fetch_daily_quests(conn, chat_id)
-        if not quests:
-            await context.bot.send_message(chat_id=chat_id, text="No quests for today.")
-        else:
-            msg = "📢 *Today's Quests:*\n"
-            for q in quests:
-                msg += f"- {q['description']} (Use #{q['tag']})\n"
-            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
-
     # Handle /questscore command
     elif text.startswith("/questscore"):
         scores = await calculate_quest_scores(conn, chat_id)
@@ -106,6 +95,17 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg = "🏆 *Quest Leaderboard:*\n"
             for row in scores:
                 msg += f"{row['user_name']}: {row['count']} quest(s)\n"
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+
+    # Handle /quest command
+    elif text.startswith("/quest"):
+        quests = await fetch_daily_quests(conn, chat_id)
+        if not quests:
+            await context.bot.send_message(chat_id=chat_id, text="No quests for today.")
+        else:
+            msg = "📢 *Today's Quests:*\n"
+            for q in quests:
+                msg += f"- {q['description']} (Use #{q['tag']})\n"
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
 
     # Hashtag detection for quest completions
