@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from .db import connect_db
 from .utils import get_current_hour, send_fire_reaction
-from .quests import fetch_daily_quests, fetch_user_quest_completions, record_quest_completion
+from .quests import fetch_daily_quests, fetch_user_quest_completions, record_quest_completion, calculate_quest_scores
 
 # Regex to match valid + or ++ but not combinations like +- or -+
 PLUS_REGEX = re.compile(r'(?<!-)\+{1,2}(?!-)')
@@ -99,18 +99,13 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Handle /questscore command
     elif text.startswith("/questscore"):
-        rows = await conn.fetch("""
-            SELECT user_name, COUNT(*) AS total FROM quest_completions
-            WHERE chat_id=$1
-            GROUP BY user_name
-            ORDER BY total DESC
-        """, chat_id)
-        if not rows:
+        scores = await calculate_quest_scores(conn, chat_id)
+        if not scores:
             await context.bot.send_message(chat_id=chat_id, text="No quest completions yet.")
         else:
             msg = "🏆 *Quest Leaderboard:*\n"
-            for r in rows:
-                msg += f"{r['user_name']}: {r['total']}\n"
+            for row in scores:
+                msg += f"{row['user_name']}: {row['count']} quest(s)\n"
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
 
     # Hashtag detection for quest completions
