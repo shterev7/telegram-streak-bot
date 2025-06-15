@@ -105,7 +105,7 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             msg = "📢 *Today's Quests:*\n"
             for q in quests:
-                msg += f"- {q['description']} (Use #{q['tag']} to complete the quest)\n"
+                msg += f"- {q['description']} (Use #{q['tag']} to complete the quest until 22:00)\n"
             await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
 
     # Hashtag detection for quest completions
@@ -117,7 +117,7 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         current_hour = get_current_hour()
         if current_hour >= 22:
-            await context.bot.send_message(chat_id=chat_id, text="⏰ Sorry, today's quest can no longer be completed. "
+            await context.bot.send_message(chat_id=chat_id, text=f"⏰ Sorry {user_name}, today's quest can no longer be completed. "
                                                                  "A new one will come tomorrow!")
             await conn.close()
             return
