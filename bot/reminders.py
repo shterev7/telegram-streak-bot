@@ -58,7 +58,7 @@ async def send_daily_quest(app):
 
         message = "📢 *Today's Quests:*\n"
         for q in generated:
-            message += f"- {q['description']} (Use #{q['tag']})\n"
+            message += f"- {q['description']} (Use #{q['tag']} to complete the quest)\n"
 
         try:
             await app.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
