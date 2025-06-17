@@ -4,6 +4,9 @@ from .db import connect_db
 
 
 async def generate_daily_quests(chat_id):
+    """
+    Generate quests for the current day, fetch those from the past 2 days and remove them from today's selection.
+    """
     conn = await connect_db()
 
     # Fetch existing quests from past 2 days
@@ -35,6 +38,9 @@ async def generate_daily_quests(chat_id):
 
 
 async def fetch_daily_quests(conn, chat_id):
+    """
+    Fetching the quests.
+    """
     today = datetime.date.today()
     return await conn.fetch("""
         SELECT description, tag FROM daily_quests
@@ -43,6 +49,9 @@ async def fetch_daily_quests(conn, chat_id):
 
 
 async def record_quest_completion(conn, chat_id, user_id, user_name, tag):
+    """
+    Record a user's completion of a quest for a specific date.
+    """
     today = datetime.date.today()
     result = await conn.execute("""
         INSERT INTO quest_completions (chat_id, user_id, user_name, tag, date)
@@ -53,6 +62,9 @@ async def record_quest_completion(conn, chat_id, user_id, user_name, tag):
 
 
 async def fetch_user_quest_completions(conn, chat_id, user_id):
+    """
+    Check if a user has already completed a quest with the given tag on a specific date.
+    """
     today = datetime.date.today()
     rows = await conn.fetch("""
         SELECT tag FROM quest_completions
@@ -62,6 +74,9 @@ async def fetch_user_quest_completions(conn, chat_id, user_id):
 
 
 async def calculate_quest_scores(conn, chat_id):
+    """
+    Return a leaderboard showing how many quests each user has completed in a given chat.
+    """
     return await conn.fetch("""
         SELECT user_name, COUNT(*) as count FROM quest_completions
         WHERE chat_id=$1
