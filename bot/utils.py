@@ -6,12 +6,12 @@ import os
 
 
 motivational_quotes = [
-    "❗️ Don’t wish for it. Work for it.",
-    "❗️ Sweat now, shine later.",
-    "❗️ The only bad workout is the one you didn’t do.",
-    "❗️ One more rep. One more step. Let’s go!",
-    "❗️ Progress starts with showing up!",
-    "❗️ Discipline = freedom. Hit your streak!"
+    "Don’t wish for it. Work for it.",
+    "Sweat now, shine later.",
+    "The only bad workout is the one you didn’t do.",
+    "One more rep. One more step. Let’s go!",
+    "Progress starts with showing up!",
+    "Discipline = freedom. Hit your streak!"
 ]
 
 
