@@ -8,6 +8,7 @@ from telegram.ext import (
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bot.handlers import handle_all_text
 from bot.reminders import send_daily_reminder, send_daily_quest
+from bot.archive import archive_and_reset_yearly_data
 
 # --- Logging setup ---
 logging.basicConfig(
@@ -31,6 +32,7 @@ def main():
     scheduler = AsyncIOScheduler(timezone="Europe/Sofia")
     scheduler.add_job(send_daily_quest, "cron", hour=10, minute=0, args=[app])
     scheduler.add_job(send_daily_reminder, "cron", hour=21, minute=0, args=[app])
+    scheduler.add_job(archive_and_reset_yearly_data, "cron", month=12, day=31, hour=23, minute=59, args=[app])
     scheduler.start()
 
     logging.info("Bot is running...")

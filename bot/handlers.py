@@ -9,6 +9,8 @@ from .quests import fetch_daily_quests, fetch_user_quest_completions, record_que
 
 # Regex to match valid + or ++ but not combinations like +- or -+
 PLUS_REGEX = re.compile(r'(?<!-)\+{1,2}(?!-)')
+YEAR_STREAKS_REGEX = re.compile(r"^/streaks(\d{4})$")
+YEAR_QUESTS_REGEX = re.compile(r"^/questscore(\d{4})$")
 
 
 async def update_streak(conn, chat_id, user_id, user_name):
@@ -65,6 +67,44 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ON CONFLICT (chat_id, user_id) DO NOTHING
     """, chat_id, user_id, user_name)
 
+    # YEARLY STREAKS: /streaksYYYY
+    match = YEAR_STREAKS_REGEX.match(text)
+    if match:
+        year = int(match.group(1))
+        rows = await conn.fetch("""
+            SELECT user_name, streak FROM streaks_archive
+            WHERE chat_id=$1 AND year=$2
+            ORDER BY streak DESC
+        """, chat_id, year)
+        if not rows:
+            await context.bot.send_message(chat_id=chat_id, text=f"No streak data found for {year}.")
+        else:
+            msg = f"📅 *Streaks {year}:*\n"
+            for r in rows:
+                msg += f"{r['user_name']}: {r['streak']}\n"
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        await conn.close()
+        return
+
+    # YEARLY QUEST SCORES: /questscoreYYYY
+    match = YEAR_QUESTS_REGEX.match(text)
+    if match:
+        year = int(match.group(1))
+        scores = await conn.fetch("""
+            SELECT user_name, completions FROM quest_completions_archive
+            WHERE chat_id=$1 AND year=$2
+            ORDER BY completions DESC
+        """, chat_id, year)
+        if not scores:
+            await context.bot.send_message(chat_id=chat_id, text=f"No quest data found for {year}.")
+        else:
+            msg = f"🏆 *Quest Leaderboard {year}:*\n"
+            for row in scores:
+                msg += f"{row['user_name']}: {row['completions']}\n"
+            await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+        await conn.close()
+        return
+
     # Handle + or ++ for streaks
     if PLUS_REGEX.search(text):
         updated = await update_streak(conn, chat_id, user_id, user_name)
@@ -118,7 +158,7 @@ async def handle_all_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_hour = get_current_hour()
         if current_hour >= 22:
             await context.bot.send_message(chat_id=chat_id, text=f"⏰ Sorry {user_name}, today's quest can no longer be completed. "
-                                                                 "A new one will come tomorrow!")
+                                                                     "A new one will come tomorrow!")
             await conn.close()
             return
 
