@@ -1,64 +1,68 @@
 import os
 import datetime
-from pytz import timezone
 from .db import connect_db
 from .utils import get_random_quote
-from .quests import generate_daily_quest, fetch_daily_quest
+from .quests import generate_daily_quests, fetch_daily_quests
 
 
 async def send_daily_reminder(app):
-    """Notify users who haven’t submitted their streak today."""
-
-    group_chat_id = os.getenv("GROUP_CHAT_ID")
-    if not group_chat_id:
-        return
-
     conn = await connect_db()
     today = datetime.date.today()
-    rows = await conn.fetch(
-        "SELECT user_id, user_name, last_date FROM streaks WHERE chat_id=$1",
-        group_chat_id
-    )
 
-    inactive = [
-        (r['user_id'], r['user_name']) for r in rows if r['last_date'] != today
-    ]
+    # Get all unique group chat IDs from streaks table
+    chat_ids = await conn.fetch("SELECT DISTINCT chat_id FROM streaks")
 
-    if not inactive:
-        await conn.close()
-        return
+    for row in chat_ids:
+        chat_id = row['chat_id']
+        rows = await conn.fetch("""
+            SELECT user_id, user_name, last_date FROM streaks
+            WHERE chat_id=$1
+        """, chat_id)
 
-    quote = get_random_quote()
-    mentions = "\n".join([f"[{name}](tg://user?id={uid})" for uid, name in inactive])
-    message = f"{quote}\n\n❗️These champions haven’t hit their streak today:\n{mentions}"
+        inactive = [(r['user_id'], r['user_name']) for r in rows if r['last_date'] != today]
 
-    await app.bot.send_message(chat_id=group_chat_id, text=message, parse_mode="Markdown")
+        if not inactive:
+            continue
+
+        quote = get_random_quote()
+        mentions = "\n".join([f"[{name}](tg://user?id={uid})" for uid, name in inactive])
+        message = f"👀️{quote}\n\nThese champions haven’t hit their streak today:\n{mentions}"
+
+        try:
+            await app.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Failed to send reminder to {chat_id}: {e}")
+
     await conn.close()
 
 
 async def send_daily_quest(app):
-    """Generate and send the daily quest announcement at 10:00 EET."""
-
-    group_chat_id = os.getenv("GROUP_CHAT_ID")
-    if not group_chat_id:
-        return
-
-    await generate_daily_quest(group_chat_id)
-
-    tz = timezone("Europe/Sofia")
-    today = datetime.datetime.now(tz).date()
-
     conn = await connect_db()
-    quest = await fetch_daily_quest(conn, group_chat_id, today)
-    await conn.close()
+    today = datetime.date.today()
 
-    if quest:
-        await app.bot.send_message(
-            chat_id=group_chat_id,
-            text=(
-                f"❗️ *Today's Quest* ❗️\n"
-                f"{quest['description']}\n\n"
-                f"Use `#{quest['tag']}` to complete it before 22:00!"
-            ),
-            parse_mode="Markdown"
-        )
+    # Get all unique chat IDs from streaks table
+    chat_ids = await conn.fetch("SELECT DISTINCT chat_id FROM streaks")
+
+    for row in chat_ids:
+        chat_id = row['chat_id']
+
+        # Check if quests already exist
+        quests = await fetch_daily_quests(conn, chat_id)
+        if quests:
+            continue
+
+        # Generate and announce
+        generated = await generate_daily_quests(chat_id)
+        if not generated:
+            continue
+
+        message = "📢 *Today's Quests:*\n"
+        for q in generated:
+            message += f"- {q['description']} (Use #{q['tag']} to complete the quest until 22:00)\n"
+
+        try:
+            await app.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+        except Exception as e:
+            print(f"Failed to send daily quests to {chat_id}: {e}")
+
+    await conn.close()
