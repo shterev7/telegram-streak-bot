@@ -7,6 +7,8 @@ Notable dependencies may include (but are not limited to):
 - python-telegram-bot (MIT License)
 - asyncpg (Apache License 2.0)
 - APScheduler (MIT License)
+- httpx (BSD 3-Clause License)
+- pytz (MIT License)
 
 Use of these components is permitted under their original licenses.
 This project's non-commercial license applies only to the original
