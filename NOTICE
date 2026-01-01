@@ -1,0 +1,13 @@
+This project includes third-party open-source software components.
+
+These components are licensed under their respective licenses and remain
+subject to their original terms and conditions.
+
+Notable dependencies may include (but are not limited to):
+- python-telegram-bot (MIT License)
+- asyncpg (Apache License 2.0)
+- APScheduler (MIT License)
+
+Use of these components is permitted under their original licenses.
+This project's non-commercial license applies only to the original
+code authored by the project owner.
